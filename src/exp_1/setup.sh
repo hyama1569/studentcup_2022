@@ -18,12 +18,11 @@ pip install torch==1.9+cu111 -f https://download.pytorch.org/whl/torch_stable.ht
 #submit_sample.csv
 #wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1w9ZwhbDMmqdCz8ixFO5PLcjZwst6KkSM' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1w9ZwhbDMmqdCz8ixFO5PLcjZwst6KkSM" -O submit_sample.csv && rm -rf /tmp/cookies.txt
 #train.pickle
-wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_" -O train.csv && rm -rf /tmp/cookies.txt
+wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_" -O train.pickle && rm -rf /tmp/cookies.txt
 #test.pickle
-wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_" -O train.csv && rm -rf /tmp/cookies.txt
+wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1EyKynZkPXVOqN-mpjsJcWdwIRwc25qk_" -O test.pickle && rm -rf /tmp/cookies.txt
 
 
 
 #move files
 mv t* ../../data
-mv s* ../../data

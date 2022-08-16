@@ -408,8 +408,8 @@ def main(cfg: DictConfig):
     #data = pd.read_pickle(cfg.path.data_file_name)
     #train, test = train_test_split(data, test_size=cfg.training.test_size, shuffle=True)
     #train, valid = train_test_split(train, test_size=cfg.training.valid_size, shuffle=True)
-    train = pd.read_pickle(cfg.train_file_name)
-    test = pd.read_pickle(cfg.test_file_name)
+    train = pd.read_pickle(cfg.path.train_file_name)
+    test = pd.read_pickle(cfg.path.test_file_name)
     data_module = CreateDataModule(
         train_df=train,
         test_df=test,
