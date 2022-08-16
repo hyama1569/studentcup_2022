@@ -15,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics.functional import accuracy, auroc
 from transformers import BertModel, BertTokenizer
+import re
 
 from pytorch_lightning.loops.fit_loop import FitLoop
 from pytorch_lightning.loops.loop import Loop
@@ -29,6 +30,11 @@ from os import path
 from typing import Any, Dict, List, Optional, Type
 DATASETS_PATH = path.join(path.dirname(__file__), "..", "..", "data")
 
+def preprocess(data: pd.DataFrame) -> pd.DataFrame:
+    f = re.compile(r"<[^>]*?>|&amp;|[/'’\"”]")
+    data["description"] = data["description"].map(lambda x: f.sub(" ", x))
+    #data["description"] = data["description"].map(lambda x: x.lstrip())
+    return data
 
 class BaseKFoldDataModule(pl.LightningDataModule, ABC):
     @abstractmethod
@@ -408,11 +414,15 @@ def main(cfg: DictConfig):
     #data = pd.read_pickle(cfg.path.data_file_name)
     #train, test = train_test_split(data, test_size=cfg.training.test_size, shuffle=True)
     #train, valid = train_test_split(train, test_size=cfg.training.valid_size, shuffle=True)
-    train = pd.read_pickle(cfg.path.train_file_name)
-    test = pd.read_pickle(cfg.path.test_file_name)
+    #train = pd.read_pickle(cfg.path.train_file_name)
+    #test = pd.read_pickle(cfg.path.test_file_name)
+    train_df = pd.read_csv(cfg.path.train_file_path)
+    test_df = pd.read_csv(cfg.path.test_file_path)
+    train_df = preprocess(train_df)
+    test_df = preprocess(test_df)
     data_module = CreateDataModule(
-        train_df=train,
-        test_df=test,
+        train_df=train_df,
+        test_df=test_df,
         batch_size=cfg.training.batch_size,
         max_token_len=cfg.model.max_token_len,
     )

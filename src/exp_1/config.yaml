@@ -3,8 +3,8 @@ wandb:
   exp_num: 1
   tags: [bert]
 path:
-  train_file_name: /workspace/studentcup_2022/data/train.pickle
-  test_file_name: /workspace/studentcup_2022/data/test.pickle
+  train_file_name: /workspace/studentcup_2022/data/train.csv
+  test_file_name: /workspace/studentcup_2022/data/test.csv
   checkpoint_path: checkpoints
 model:
   n_classes: 4
