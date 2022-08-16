@@ -3,11 +3,11 @@
 pip install wandb
 wandb login
 pip install transformers
-pip install setuptools==59.5.0
+#pip install setuptools==59.5.0
 #pip install -U spacy
 pip install hydra-core --upgrade
 pip install git+https://github.com/PyTorchLightning/pytorch-lightning
-pip install torch==1.9+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+#pip install torch==1.9+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 
 
 #data
