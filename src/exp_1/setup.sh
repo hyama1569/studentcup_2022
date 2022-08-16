@@ -6,7 +6,10 @@ pip install transformers
 #pip install setuptools==59.5.0
 #pip install -U spacy
 pip install hydra-core --upgrade
-pip install git+https://github.com/PyTorchLightning/pytorch-lightning
+pip install pytorch-lightning==1.5.10
+git clone https://github.com/SkafteNicki/pl_cross.git
+python ./pl_cross/setup.py install
+
 #pip install torch==1.9+cu111 -f https://download.pytorch.org/whl/torch_stable.html
 
 
