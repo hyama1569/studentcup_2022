@@ -21,10 +21,10 @@ training:
   n_epochs: 10
   batch_size: 16
   learning_rate: 0.01
-  pl_seed: 42
+  pl_seed: 0
   n_gpus: 1
   #fold: kf
-  fold: skf
+  #fold: skf
 callbacks:
   patience: 5
   patience_min_delta: 0

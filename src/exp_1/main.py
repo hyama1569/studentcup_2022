@@ -147,7 +147,7 @@ class CreateDataModule(pl.LightningDataModule):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=os.cpu_count())
 
     def val_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
+        return DataLoader(self.valid_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
@@ -210,8 +210,8 @@ class Classifier(pl.LightningModule):
         if self.pooling_type == '4_cls':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
             preds = self.classifier(clses)
-        preds = self.classifier(output.pooler_output)
-        preds = torch.flatten(preds)
+        #preds = self.classifier(output.pooler_output)
+        #preds = torch.flatten(preds)
         return preds, output
       
     def training_step(self, batch, batch_idx):
@@ -298,72 +298,63 @@ def main(cfg: DictConfig):
         tags=cfg.wandb.tags,
         log_model=True,
     )
-    #checkpoint_path = os.path.join(
-    #    wandb_logger.experiment.dir, cfg.path.checkpoint_path
-    #)
+    checkpoint_path = os.path.join(
+        wandb_logger.experiment.dir, cfg.path.checkpoint_path
+    )
     wandb_logger.log_hyperparams(cfg)
 
     train_df = pd.read_csv(cfg.path.train_file_name)
     #train_df = train_df.rename(columns={'jobflag': 'label'})
     test_df = pd.read_csv(cfg.path.test_file_name)
     test_df["jobflag"] = 0
+    train_df["jobflag"] = train_df["jobflag"] - 1
     train_df = preprocess(train_df)
     test_df = preprocess(test_df)
-    trn_fold = [0, 1, 2, 3, 4]
-    if cfg.training.fold == 'kf':
-        folds = get_kfold(train=train_df, n_splits=5, seed=cfg.training.pl_seed)
-    if cfg.training.fold == 'skf':
-        folds = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=5, seed=cfg.training.pl_seed)
+    #trn_fold = [0, 1, 2, 3, 4]
+    #if cfg.training.fold == 'kf':
+    #    folds = get_kfold(train=train_df, n_splits=5, seed=cfg.training.pl_seed)
+    #if cfg.training.fold == 'skf':
+    #    folds = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=5, seed=cfg.training.pl_seed)
 
-    test_acc_all = []
-    test_auroc_all = []
-    for fold in trn_fold:
-        train_df_fold, valid_df_fold = train_df.loc[folds!=fold], train_df[folds==fold]
-        checkpoint_path = os.path.join(
-            wandb_logger.experiment.dir, cfg.path.checkpoint_path + '_{}'.format(fold)
-        )
-        data_module = CreateDataModule(
-            train_df=train_df_fold,
-            valid_df=valid_df_fold,
-            test_df=test_df,
-            batch_size=cfg.training.batch_size,
-            max_token_len=cfg.model.max_token_len,
-        )
-        data_module.setup(stage='fit')
 
-        call_backs = make_callbacks(
-            cfg.callbacks.patience_min_delta, cfg.callbacks.patience, checkpoint_path
-        )
+    train_df_fold, valid_df_fold = train_test_split(train_df, test_size=cfg.training.test_size, shuffle=True, random_state=cfg.training.pl_seed)
+    data_module = CreateDataModule(
+        train_df=train_df_fold,
+        valid_df=valid_df_fold,
+        test_df=test_df,
+        batch_size=cfg.training.batch_size,
+        max_token_len=cfg.model.max_token_len,
+    )
+    data_module.setup(stage='fit')
 
-        model = Classifier(
-            n_classes=cfg.model.n_classes,
-            n_linears=cfg.model.n_linears,
-            d_hidden_linear=cfg.model.d_hidden_linear,
-            dropout_rate=cfg.model.dropout_rate,
-            learning_rate=cfg.training.learning_rate,
-            pooling_type=cfg.model.pooling_type,
-        )
-        trainer = pl.Trainer(
-            max_epochs=cfg.training.n_epochs,
-            devices=cfg.training.n_gpus,
-            accelerator="gpu",
-            #progress_bar_refresh_rate=30,
-            callbacks=call_backs,
-            logger=wandb_logger,
-            deterministic=True,
-            num_folds=5,
-            shuffle=False,
-            stratified=True,
-        )
-                
-        data_module.setup(stage='test')                       
-        results = trainer.test(ckpt_path=call_backs[1].best_model_path, datamodule=data_module)                      
-        print(results)
-        test_acc_all.append(results[0]['test_accuracy'])
-        test_auroc_all.append(results[0]['test_auroc'])
-    print('test_acc_avg', sum(test_acc_all) / len(test_acc_all))
-    print('test_auroc_avg', sum(test_auroc_all) / len(test_auroc_all))
+    call_backs = make_callbacks(
+        cfg.callbacks.patience_min_delta, cfg.callbacks.patience, checkpoint_path
+    )
 
+    model = Classifier(
+        n_classes=cfg.model.n_classes,
+        n_linears=cfg.model.n_linears,
+        d_hidden_linear=cfg.model.d_hidden_linear,
+        dropout_rate=cfg.model.dropout_rate,
+        learning_rate=cfg.training.learning_rate,
+        pooling_type=cfg.model.pooling_type,
+    )
+    trainer = pl.Trainer(
+        max_epochs=cfg.training.n_epochs,
+        devices=cfg.training.n_gpus,
+        accelerator="gpu",
+        #progress_bar_refresh_rate=30,
+        callbacks=call_backs,
+        logger=wandb_logger,
+        deterministic=True,
+        shuffle=False,
+        stratified=True,
+    )
+    trainer.fit(model, data_module)
+
+    data_module.setup(stage='test')                       
+    results = trainer.test(ckpt_path=call_backs[1].best_model_path, datamodule=data_module)                      
+    print(results)
 
 if __name__ == "__main__":
     main()
