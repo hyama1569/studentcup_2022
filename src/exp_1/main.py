@@ -17,6 +17,7 @@ from torchmetrics.functional import accuracy, auroc
 from transformers import BertModel, BertTokenizer
 import re
 from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.metrics import f1_score
 
 
 def preprocess(data: pd.DataFrame) -> pd.DataFrame:
@@ -248,8 +249,8 @@ class Classifier(pl.LightningModule):
         epoch_accuracy = num_correct / len(epoch_labels)
         self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
         
-        epoch_auroc = auroc(epoch_preds, epoch_labels, num_classes=self.n_classes)
-        self.log(f"{mode}_auroc", epoch_auroc)                  
+        epoch_f1 = auroc(y_pred=epoch_preds, y_true=epoch_labels, average="macro")
+        self.log(f"{mode}_f1", epoch_f1, logger=True)  
 
     def validation_epoch_end(self, outputs, mode="val"):
         epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
@@ -261,8 +262,8 @@ class Classifier(pl.LightningModule):
         epoch_accuracy = num_correct / len(epoch_labels)
         self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
         
-        epoch_auroc = auroc(epoch_preds, epoch_labels, num_classes=self.n_classes)
-        self.log(f"{mode}_auroc", epoch_auroc)                    
+        epoch_f1 = auroc(y_pred=epoch_preds, y_true=epoch_labels, average="macro")
+        self.log(f"{mode}_f1", epoch_f1, logger=True)                    
 
     def test_epoch_end(self, outputs):
         return self.validation_epoch_end(outputs, "test")
@@ -275,7 +276,7 @@ def make_callbacks(min_delta, patience, checkpoint_path):
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_path,
         filename="{epoch}",
-        save_top_k=3,
+        save_top_k=2,
         verbose=True,
         monitor="val_loss",
         mode="min",
@@ -347,8 +348,6 @@ def main(cfg: DictConfig):
         callbacks=call_backs,
         logger=wandb_logger,
         deterministic=True,
-        shuffle=False,
-        stratified=True,
     )
     trainer.fit(model, data_module)
 
