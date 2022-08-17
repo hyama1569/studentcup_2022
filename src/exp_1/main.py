@@ -17,7 +17,7 @@ from torchmetrics.functional import accuracy, auroc
 from transformers import BertModel, BertTokenizer
 import re
 from sklearn.model_selection import KFold, StratifiedKFold
-from sklearn.metrics import f1_score
+from torchmetrics.functional import f1_score
 
 
 def preprocess(data: pd.DataFrame) -> pd.DataFrame:
@@ -249,7 +249,7 @@ class Classifier(pl.LightningModule):
         epoch_accuracy = num_correct / len(epoch_labels)
         self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
         
-        epoch_f1 = auroc(y_pred=epoch_preds, y_true=epoch_labels, average="macro")
+        epoch_f1 = f1_score(epoch_preds, epoch_labels, num_classes=self.n_classes, average='macro')
         self.log(f"{mode}_f1", epoch_f1, logger=True)  
 
     def validation_epoch_end(self, outputs, mode="val"):
@@ -262,7 +262,7 @@ class Classifier(pl.LightningModule):
         epoch_accuracy = num_correct / len(epoch_labels)
         self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
         
-        epoch_f1 = auroc(y_pred=epoch_preds, y_true=epoch_labels, average="macro")
+        epoch_f1 = f1_score(epoch_preds, epoch_labels, num_classes=self.n_classes, average='macro')
         self.log(f"{mode}_f1", epoch_f1, logger=True)                    
 
     def test_epoch_end(self, outputs):
