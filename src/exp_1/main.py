@@ -201,6 +201,7 @@ def train_fn(dataloader, model, optimizer, epoch):
         optimizer.step()
         #scheduler.step()
 
+        preds = torch.argmax(preds, axis=1)
         total_loss += loss.item()
         total_corrects += torch.sum(preds == labels)
 
@@ -235,6 +236,7 @@ def eval_fn(dataloader, model, epoch):
                                      attention_mask=attention_mask)
             loss = model.criterion(preds, labels)
 
+            preds = torch.argmax(preds, axis=1)
             total_loss += loss.item()
             total_corrects += torch.sum(preds == labels)
 
@@ -404,11 +406,15 @@ def main():
 
         for batch in progress:
             progress.set_description("<Test>")
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask=batch["attention_mask"].to(DEVICE)
+            #labels = batch["labels"].to(DEVICE)
 
             outputs = []
             for model in models:
-                output = model(batch["input_ids"], batch["attention_mask"])
-                outputs.append(output)
+                preds, _ = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
+                outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
             outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
