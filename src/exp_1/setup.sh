@@ -3,6 +3,7 @@
 #pip install wandb
 #wandb login
 pip install transformers
+pip install seaborn
 #pip install setuptools==59.5.0
 #pip install -U spacy
 #pip install hydra-core --upgrade

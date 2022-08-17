@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 from sklearn.model_selection import StratifiedKFold, KFold
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from transformers import AdamW, AutoModel, AutoTokenizer
 from torch.utils.data import DataLoader, Dataset
 
@@ -188,20 +188,23 @@ def train_fn(dataloader, model, optimizer, epoch):
     progress = tqdm(dataloader, total=len(dataloader))
     for i, batch in enumerate(progress):
         progress.set_description(f"<Train> Epoch{epoch+1}")
+        input_ids = batch["input_ids"].to(DEVICE)
+        attention_mask=batch["attention_mask"].to(DEVICE)
+        labels = batch["labels"].to(DEVICE)
 
         optimizer.zero_grad()
-        preds, output = model.forward(input_ids=batch["input_ids"],
-                                     attention_mask=batch["attention_mask"])
-        loss = model.criterion(preds, batch["labels"])
+        preds, output = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
+        loss = model.criterion(preds, labels)
 
         loss.backward()
         optimizer.step()
         #scheduler.step()
 
         total_loss += loss.item()
-        total_corrects += torch.sum(preds == batch["labels"])
+        total_corrects += torch.sum(preds == labels)
 
-        all_labels += batch["labels"].tolist()
+        all_labels += labels.tolist()
         all_preds += preds.tolist()
 
         progress.set_postfix(loss=total_loss/(i+1), f1=f1_score(all_labels, all_preds, average="macro"))
@@ -224,14 +227,18 @@ def eval_fn(dataloader, model, epoch):
         
         for i, batch in enumerate(progress):
             progress.set_description(f"<Valid> Epoch{epoch+1}")
-            preds, output = model.forward(input_ids=batch["input_ids"],
-                                     attention_mask=batch["attention_mask"])
-            loss = model.criterion(preds, batch["labels"])
+            input_ids = batch["input_ids"].to(DEVICE)
+            attention_mask=batch["attention_mask"].to(DEVICE)
+            labels = batch["labels"].to(DEVICE)
+
+            preds, output = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
+            loss = model.criterion(preds, labels)
 
             total_loss += loss.item()
-            total_corrects += torch.sum(preds == batch["labels"])
+            total_corrects += torch.sum(preds == labels)
 
-            all_labels += batch["labels"].tolist()
+            all_labels += labels.tolist()
             all_preds += preds.tolist()
 
             progress.set_postfix(loss=total_loss/(i+1), f1=f1_score(all_labels, all_preds, average="macro"))
@@ -290,7 +297,7 @@ def trainer(fold, fold_indices, df):
     )
 
     model = Classifier(n_classes=NUM_CLASSES, n_linears=N_LINEARS, d_hidden_linear=D_HIDDEN_LINEAR,
-                       dropout_rate=DROPOUT_RATE, learning_rate=LEARNING_RATE, pooling_type=POOLING_TYPE,
+                       dropout_rate=DROPOUT_RATE, pooling_type=POOLING_TYPE,
                        )
     model = model.to(DEVICE)
 
