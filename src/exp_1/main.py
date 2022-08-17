@@ -16,13 +16,35 @@ from torch.utils.data import DataLoader, Dataset
 from torchmetrics.functional import accuracy, auroc
 from transformers import BertModel, BertTokenizer
 import re
-import pl_cross
+from sklearn.model_selection import KFold, StratifiedKFold
+
 
 def preprocess(data: pd.DataFrame) -> pd.DataFrame:
     f = re.compile(r"<[^>]*?>|&amp;|[/'’\"”]")
     data["description"] = data["description"].map(lambda x: f.sub(" ", x))
     #data["description"] = data["description"].map(lambda x: x.lstrip())
     return data
+
+
+def get_kfold(train, n_splits, seed):
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    generator = kf.split(train)
+    fold_series = []
+    for fold, (idx_train, idx_valid) in enumerate(generator):
+        fold_series.append(pd.Series(fold, index=idx_valid))
+    fold_series = pd.concat(fold_series).sort_index()
+    return fold_series
+
+
+def get_stratifiedkfold(train, target_col, n_splits, seed):
+    kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    generator = kf.split(train, train[target_col])
+    fold_series = []
+    for fold, (idx_train, idx_valid) in enumerate(generator):
+        fold_series.append(pd.Series(fold, index=idx_valid))
+    fold_series = pd.concat(fold_series).sort_index()
+    return fold_series
+
 
 class AugmentedDataset(Dataset):
     def __init__(
@@ -32,7 +54,7 @@ class AugmentedDataset(Dataset):
         max_token_len: int,
         id_name: str,
         description_name: str,
-        jobflag_name: str,
+        jobflag_name: str = None,
     ):
         self.data = data
         self.tokenizer = tokenizer
@@ -66,10 +88,12 @@ class AugmentedDataset(Dataset):
             labels=torch.tensor(jobflag_name),
         )
 
+
 class CreateDataModule(pl.LightningDataModule):
     def __init__(
         self,
         train_df: pd.DataFrame = None,
+        valid_df: pd.DataFrame = None,
         test_df: pd.DataFrame = None, 
         batch_size: int = None, 
         max_token_len: int = None, 
@@ -80,6 +104,7 @@ class CreateDataModule(pl.LightningDataModule):
     ):
         super().__init__()
         self.train_df = train_df
+        self.valid_df = valid_df
         self.test_df = test_df
         self.batch_size = batch_size
         self.max_token_len = max_token_len
@@ -89,35 +114,46 @@ class CreateDataModule(pl.LightningDataModule):
         self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
 
     def setup(self, stage = None) -> None:
-        self.train_dataset = AugmentedDataset(
-            self.train_df, 
-            self.tokenizer, 
-            self.max_token_len,
-            self.id_column_name,
-            self.description_column_name,
-            self.jobflag_column_name
-        )
+        if stage == 'fit':
+            self.train_dataset = AugmentedDataset(
+                self.train_df, 
+                self.tokenizer, 
+                self.max_token_len,
+                self.id_column_name,
+                self.description_column_name,
+                self.jobflag_column_name
+            )
 
-        self.test_dataset = AugmentedDataset(
-            self.test_df, 
-            self.tokenizer, 
-            self.max_token_len,
-            self.id_column_name,
-            self.description_column_name,
-            self.jobflag_column_name
-        )
+            self.valid_dataset = AugmentedDataset(
+                self.valid_df, 
+                self.tokenizer, 
+                self.max_token_len,
+                self.id_column_name,
+                self.description_column_name,
+                self.jobflag_column_name
+            )
+
+        if stage == 'test':
+            self.test_dataset = AugmentedDataset(
+                self.test_df, 
+                self.tokenizer, 
+                self.max_token_len,
+                self.id_column_name,
+                self.description_column_name,
+                self.jobflag_column_name
+            )
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=os.cpu_count())
 
-    #def val_dataloader(self):
-    #    return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
+    def val_dataloader(self):
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
 
 
-class BertRanker(pl.LightningModule):
+class Classifier(pl.LightningModule):
     def __init__(
         self, 
         n_classes: int, 
@@ -234,8 +270,8 @@ class BertRanker(pl.LightningModule):
     def configure_optimizers(self):
         return optim.Adam(self.parameters(), lr=self.lr)
 
-def make_callbacks(min_delta, patience, checkpoint_path):
 
+def make_callbacks(min_delta, patience, checkpoint_path):
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_path,
         filename="{epoch}",
@@ -251,6 +287,7 @@ def make_callbacks(min_delta, patience, checkpoint_path):
 
     return [early_stop_callback, checkpoint_callback]
 
+
 @hydra.main(config_path=".", config_name="config")
 def main(cfg: DictConfig):
     pl.seed_everything(cfg.training.pl_seed, workers=True)
@@ -261,58 +298,72 @@ def main(cfg: DictConfig):
         tags=cfg.wandb.tags,
         log_model=True,
     )
-    checkpoint_path = os.path.join(
-        wandb_logger.experiment.dir, cfg.path.checkpoint_path
-    )
+    #checkpoint_path = os.path.join(
+    #    wandb_logger.experiment.dir, cfg.path.checkpoint_path
+    #)
     wandb_logger.log_hyperparams(cfg)
-    #data = pd.read_pickle(cfg.path.data_file_name)
-    #train, test = train_test_split(data, test_size=cfg.training.test_size, shuffle=True)
-    #train, valid = train_test_split(train, test_size=cfg.training.valid_size, shuffle=True)
-    #train = pd.read_pickle(cfg.path.train_file_name)
-    #test = pd.read_pickle(cfg.path.test_file_name)
+
     train_df = pd.read_csv(cfg.path.train_file_name)
+    #train_df = train_df.rename(columns={'jobflag': 'label'})
     test_df = pd.read_csv(cfg.path.test_file_name)
+    test_df["jobflag"] = 0
     train_df = preprocess(train_df)
     test_df = preprocess(test_df)
-    data_module = CreateDataModule(
-        train_df=train_df,
-        test_df=test_df,
-        batch_size=cfg.training.batch_size,
-        max_token_len=cfg.model.max_token_len,
-    )
-    data_module.setup(stage='fit')
+    trn_fold = [0, 1, 2, 3, 4]
+    if cfg.training.fold == 'kf':
+        folds = get_kfold(train=train_df, n_splits=5, seed=cfg.training.pl_seed)
+    if cfg.training.fold == 'skf':
+        folds = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=5, seed=cfg.training.pl_seed)
 
-    call_backs = make_callbacks(
-        cfg.callbacks.patience_min_delta, cfg.callbacks.patience, checkpoint_path
-    )
+    test_acc_all = []
+    test_auroc_all = []
+    for fold in trn_fold:
+        train_df_fold, valid_df_fold = train_df.loc[folds!=fold], train_df[folds==fold]
+        checkpoint_path = os.path.join(
+            wandb_logger.experiment.dir, cfg.path.checkpoint_path + '_{}'.format(fold)
+        )
+        data_module = CreateDataModule(
+            train_df=train_df_fold,
+            valid_df=valid_df_fold,
+            test_df=test_df,
+            batch_size=cfg.training.batch_size,
+            max_token_len=cfg.model.max_token_len,
+        )
+        data_module.setup(stage='fit')
 
-    model = BertRanker(
-        n_classes=cfg.model.n_classes,
-        n_linears=cfg.model.n_linears,
-        d_hidden_linear=cfg.model.d_hidden_linear,
-        dropout_rate=cfg.model.dropout_rate,
-        learning_rate=cfg.training.learning_rate,
-        pooling_type=cfg.model.pooling_type,
-    )
-    trainer = pl_cross.Trainer(
-        max_epochs=cfg.training.n_epochs,
-        devices=cfg.training.n_gpus,
-        accelerator="gpu",
-        #progress_bar_refresh_rate=30,
-        callbacks=call_backs,
-        logger=wandb_logger,
-        deterministic=True,
-        num_folds=5,
-        shuffle=False,
-        stratified=True,
-    )
+        call_backs = make_callbacks(
+            cfg.callbacks.patience_min_delta, cfg.callbacks.patience, checkpoint_path
+        )
 
-    cross_val_stats = trainer.cross_validate(model, datamodule=data_module)
-    ensemble_model = trainer.create_ensemble(model)
-                           
-    #data_module.setup(stage='test')                       
-    #results = trainer.test(ckpt_path=call_backs[1].best_model_path, datamodule=data_module)                      
-    #print(results)
+        model = Classifier(
+            n_classes=cfg.model.n_classes,
+            n_linears=cfg.model.n_linears,
+            d_hidden_linear=cfg.model.d_hidden_linear,
+            dropout_rate=cfg.model.dropout_rate,
+            learning_rate=cfg.training.learning_rate,
+            pooling_type=cfg.model.pooling_type,
+        )
+        trainer = pl.Trainer(
+            max_epochs=cfg.training.n_epochs,
+            devices=cfg.training.n_gpus,
+            accelerator="gpu",
+            #progress_bar_refresh_rate=30,
+            callbacks=call_backs,
+            logger=wandb_logger,
+            deterministic=True,
+            num_folds=5,
+            shuffle=False,
+            stratified=True,
+        )
+                
+        data_module.setup(stage='test')                       
+        results = trainer.test(ckpt_path=call_backs[1].best_model_path, datamodule=data_module)                      
+        print(results)
+        test_acc_all.append(results[0]['test_accuracy'])
+        test_auroc_all.append(results[0]['test_auroc'])
+    print('test_acc_avg', sum(test_acc_all) / len(test_acc_all))
+    print('test_auroc_avg', sum(test_auroc_all) / len(test_auroc_all))
+
 
 if __name__ == "__main__":
     main()
