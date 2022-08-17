@@ -1,31 +1,60 @@
-from cProfile import label
+import collections
 import os
-from random import shuffle
-import hydra
+import random
+import matplotlib.pyplot as plt
+import re
 import numpy as np
 import pandas as pd
-import pytorch_lightning as pl
+import seaborn as sns
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
-from omegaconf import DictConfig
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
+from sklearn.model_selection import StratifiedKFold, KFold
+from tqdm.notebook import tqdm
+from transformers import AdamW, AutoModel, AutoTokenizer
 from torch.utils.data import DataLoader, Dataset
-from torchmetrics.functional import accuracy, auroc
-from transformers import BertModel, BertTokenizer
-import re
-from sklearn.model_selection import KFold, StratifiedKFold
-from torchmetrics.functional import f1_score
 
+DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+TRAIN_FILE = os.path.join(DATA_PATH, "train.csv")
+TEST_FILE = os.path.join(DATA_PATH, "test.csv")
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+SEED = 42
+MODELS_DIR = "./models/"
+MODEL_NAME = 'bert-base-uncased'
+TRAIN_BATCH_SIZE = 32
+VALID_BATCH_SIZE = 64
+LEARNING_RATE = 0.01
+DROPOUT_RATE = 0.1
+NUM_CLASSES = 4
+MAX_TOKEN_LEN = 512
+N_LINEARS = 1
+D_HIDDEN_LINEAR = 128
+POOLING_TYPE = 'cls'
+POOLING_TYPE = 'max'
+POOLING_TYPE = 'concat'
+EPOCHS = 20
+#FOLD_TYPE = 'kf'
+FOLD_TYPE = 'skf'
+NUM_SPLITS = 5
+
+
+def seed_everything(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
 def preprocess(data: pd.DataFrame) -> pd.DataFrame:
     f = re.compile(r"<[^>]*?>|&amp;|[/'’\"”]")
     data["description"] = data["description"].map(lambda x: f.sub(" ", x))
     #data["description"] = data["description"].map(lambda x: x.lstrip())
     return data
-
 
 def get_kfold(train, n_splits, seed):
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
@@ -36,7 +65,6 @@ def get_kfold(train, n_splits, seed):
     fold_series = pd.concat(fold_series).sort_index()
     return fold_series
 
-
 def get_stratifiedkfold(train, target_col, n_splits, seed):
     kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     generator = kf.split(train, train[target_col])
@@ -46,16 +74,15 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
     fold_series = pd.concat(fold_series).sort_index()
     return fold_series
 
-
-class AugmentedDataset(Dataset):
+class MyDataset(Dataset):
     def __init__(
         self, 
         data: pd.DataFrame, 
-        tokenizer: BertTokenizer, 
+        tokenizer,
         max_token_len: int,
-        id_name: str,
-        description_name: str,
-        jobflag_name: str = None,
+        id_name: str = 'id',
+        description_name: str = 'description',
+        jobflag_name: str = 'jobflag',
     ):
         self.data = data
         self.tokenizer = tokenizer
@@ -89,86 +116,21 @@ class AugmentedDataset(Dataset):
             labels=torch.tensor(jobflag_name),
         )
 
-
-class CreateDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        train_df: pd.DataFrame = None,
-        valid_df: pd.DataFrame = None,
-        test_df: pd.DataFrame = None, 
-        batch_size: int = None, 
-        max_token_len: int = None, 
-        id_column_name: str = 'id',
-        description_column_name: str = 'description',
-        jobflag_column_name: str = 'jobflag',
-        pretrained_model='bert-base-uncased',
-    ):
-        super().__init__()
-        self.train_df = train_df
-        self.valid_df = valid_df
-        self.test_df = test_df
-        self.batch_size = batch_size
-        self.max_token_len = max_token_len
-        self.id_column_name = id_column_name
-        self.description_column_name = description_column_name
-        self.jobflag_column_name = jobflag_column_name
-        self.tokenizer = BertTokenizer.from_pretrained(pretrained_model)
-
-    def setup(self, stage = None) -> None:
-        if stage == 'fit':
-            self.train_dataset = AugmentedDataset(
-                self.train_df, 
-                self.tokenizer, 
-                self.max_token_len,
-                self.id_column_name,
-                self.description_column_name,
-                self.jobflag_column_name
-            )
-
-            self.valid_dataset = AugmentedDataset(
-                self.valid_df, 
-                self.tokenizer, 
-                self.max_token_len,
-                self.id_column_name,
-                self.description_column_name,
-                self.jobflag_column_name
-            )
-
-        if stage == 'test':
-            self.test_dataset = AugmentedDataset(
-                self.test_df, 
-                self.tokenizer, 
-                self.max_token_len,
-                self.id_column_name,
-                self.description_column_name,
-                self.jobflag_column_name
-            )
-
-    def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=os.cpu_count())
-
-    def val_dataloader(self):
-        return DataLoader(self.valid_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
-
-    def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, num_workers=os.cpu_count())
-
-
-class Classifier(pl.LightningModule):
+class Classifier(nn.Module):
     def __init__(
         self, 
         n_classes: int, 
         n_linears: int,
         d_hidden_linear: int,
         dropout_rate: float,
-        learning_rate: float,
+        #learning_rate: float,
         pooling_type: str,
-        pretrained_model='bert-base-uncased',
+        pretrained_model=MODEL_NAME,
     ):
         super().__init__()
-        self.bert = BertModel.from_pretrained(pretrained_model, output_hidden_states=True, return_dict=True)
+        self.bert = AutoModel.from_pretrained(pretrained_model, output_hidden_states=True, return_dict=True)
         
-        if pooling_type == '4_cls':
+        if pooling_type == 'concat':
             classifier_hidden_size = self.bert.config.hidden_size * 4
         else:
             classifier_hidden_size = self.bert.config.hidden_size
@@ -188,7 +150,8 @@ class Classifier(pl.LightningModule):
             classifier.add_module('fc_last', nn.Linear(d_hidden_linear, n_classes))
             self.classifier = classifier
         
-        self.lr = learning_rate
+        #self.lr = learning_rate
+        self.dropout = nn.Dropout(dropout_rate)
         self.criterion = nn.CrossEntropyLoss()
         self.n_classes = n_classes
         self.pooling_type = pooling_type
@@ -208,152 +171,252 @@ class Classifier(pl.LightningModule):
         if self.pooling_type == 'max':
             mp = output.last_hidden_state.max(1)[0]
             preds = self.classifier(mp)
-        if self.pooling_type == '4_cls':
+        if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
             preds = self.classifier(clses)
         #preds = self.classifier(output.pooler_output)
         #preds = torch.flatten(preds)
         return preds, output
       
-    def training_step(self, batch, batch_idx):
-        preds, output = self.forward(input_ids=batch["input_ids"],
-                                     attention_mask=batch["attention_mask"])
-        loss = self.criterion(preds, batch["labels"])
-        return {'loss': loss,
-                'batch_preds': preds,
-                'batch_labels': batch["labels"]}
+def train_fn(dataloader, model, optimizer, epoch):
+    model.train()
+    total_loss = 0
+    total_corrects = 0
+    all_labels = []
+    all_preds = []
 
-    def validation_step(self, batch, batch_idx):
-        preds, output = self.forward(input_ids=batch["input_ids"],
-                                     attention_mask=batch["attention_mask"])
-        loss = self.criterion(preds, batch["labels"])
-        return {'loss': loss,
-                'batch_preds': preds,
-                'batch_labels': batch["labels"]}
+    progress = tqdm(dataloader, total=len(dataloader))
+    for i, batch in enumerate(progress):
+        progress.set_description(f"<Train> Epoch{epoch+1}")
 
-    def test_step(self, batch, batch_idx):
-        preds, output = self.forward(input_ids=batch["input_ids"],
+        optimizer.zero_grad()
+        preds, output = model.forward(input_ids=batch["input_ids"],
                                      attention_mask=batch["attention_mask"])
-        loss = self.criterion(preds, batch["labels"])
-        return {'loss': loss,
-                'batch_preds': preds,
-                'batch_labels': batch["labels"]}
+        loss = model.criterion(preds, batch["labels"])
+
+        loss.backward()
+        optimizer.step()
+        #scheduler.step()
+
+        total_loss += loss.item()
+        total_corrects += torch.sum(preds == batch["labels"])
+
+        all_labels += batch["labels"].tolist()
+        all_preds += preds.tolist()
+
+        progress.set_postfix(loss=total_loss/(i+1), f1=f1_score(all_labels, all_preds, average="macro"))
+
+        train_loss = total_loss / len(dataloader)
+        train_acc = total_corrects.double().cpu().detach().numpy() / len(dataloader.dataset)
+        train_f1 = f1_score(all_labels, all_preds, average="macro")
+
+    return train_loss, train_acc, train_f1
+
+def eval_fn(dataloader, model, epoch):
+    model.eval()
+    total_loss = 0
+    total_corrects = 0
+    all_labels = []
+    all_preds = []
+
+    with torch.no_grad():
+        progress = tqdm(dataloader, total=len(dataloader))
+        
+        for i, batch in enumerate(progress):
+            progress.set_description(f"<Valid> Epoch{epoch+1}")
+            preds, output = model.forward(input_ids=batch["input_ids"],
+                                     attention_mask=batch["attention_mask"])
+            loss = model.criterion(preds, batch["labels"])
+
+            total_loss += loss.item()
+            total_corrects += torch.sum(preds == batch["labels"])
+
+            all_labels += batch["labels"].tolist()
+            all_preds += preds.tolist()
+
+            progress.set_postfix(loss=total_loss/(i+1), f1=f1_score(all_labels, all_preds, average="macro"))
+
+    valid_loss = total_loss / len(dataloader)
+    valid_acc = total_corrects.double().cpu().detach().numpy() / len(dataloader.dataset)
+
+    valid_f1 = f1_score(all_labels, all_preds, average="macro")
+
+    return valid_loss, valid_acc, valid_f1
+
+def plot_training(train_losses, train_accs, train_f1s,
+                  valid_losses, valid_accs, valid_f1s,
+                  epoch, fold):
     
-    def training_epoch_end(self, outputs, mode="train"):
-        epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
-        epoch_labels = torch.cat([x['batch_labels'] for x in outputs])
-        epoch_loss = self.criterion(epoch_preds, epoch_labels)
-        self.log(f"{mode}_loss", epoch_loss, logger=True)
+    loss_df = pd.DataFrame({"Train":train_losses,
+                            "Valid":valid_losses},
+                        index=range(1, epoch+2))
+    loss_ax = sns.lineplot(data=loss_df).get_figure()
+    loss_ax.savefig(f"./figures/loss_plot_fold={fold}.png", dpi=300)
+    loss_ax.clf()
 
-        num_correct = (epoch_preds.argmax(dim=1) == epoch_labels).sum().item()
-        epoch_accuracy = num_correct / len(epoch_labels)
-        self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
+    acc_df = pd.DataFrame({"Train":train_accs,
+                           "Valid":valid_accs},
+                          index=range(1, epoch+2))
+    acc_ax = sns.lineplot(data=acc_df).get_figure()
+    acc_ax.savefig(f"./figures/acc_plot_fold={fold}.png", dpi=300)
+    acc_ax.clf()
+
+    f1_df = pd.DataFrame({"Train":train_f1s,
+                          "Valid":valid_f1s},
+                         index=range(1, epoch+2))
+    f1_ax = sns.lineplot(data=f1_df).get_figure()
+    f1_ax.savefig(f"./figures/f1_plot_fold={fold}.png", dpi=300)
+    f1_ax.clf()
+
+def trainer(fold, fold_indices, df):
+    
+    #train_df = df[df.kfold != fold].reset_index(drop=True)
+    #valid_df = df[df.kfold == fold].reset_index(drop=True)
+    train_df_fold = df.loc[fold_indices!=fold].reset_index(drop=True)
+    valid_df_fold = df.loc[fold_indices==fold].reset_index(drop=True)
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+    #train_dataset = make_dataset(train_df, tokenizer, DEVICE)
+    #valid_dataset = make_dataset(valid_df, tokenizer, DEVICE)
+    train_dataset = MyDataset(data=train_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+    valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
+    )
+    valid_dataloader = torch.utils.data.DataLoader(
+        valid_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False
+    )
+
+    model = Classifier(n_classes=NUM_CLASSES, n_linears=N_LINEARS, d_hidden_linear=D_HIDDEN_LINEAR,
+                       dropout_rate=DROPOUT_RATE, learning_rate=LEARNING_RATE, pooling_type=POOLING_TYPE,
+                       )
+    model = model.to(DEVICE)
+
+    #criterion = nn.CrossEntropyLoss()
+    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=1.0)
+    # ダミーのスケジューラー
+
+    train_losses = []
+    train_accs = []
+    train_f1s = []
+    valid_losses = []
+    valid_accs = []
+    valid_f1s = []
+
+    best_loss = np.inf
+    best_acc = 0
+    best_f1 = 0
+
+    for epoch in range(EPOCHS):
+        train_loss, train_acc, train_f1 = train_fn(train_dataloader, model, optimizer, epoch)
+        valid_loss, valid_acc, valid_f1 = eval_fn(valid_dataloader, model, epoch)
+        print(f"Loss: {valid_loss}  Acc: {valid_acc}  f1: {valid_f1}  ", end="")
+
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        train_f1s.append(train_f1)
+        valid_losses.append(valid_loss)
+        valid_accs.append(valid_acc)
+        valid_f1s.append(valid_f1)
+
+        plot_training(train_losses, train_accs, train_f1s,
+                      valid_losses, valid_accs, valid_f1s,
+                      epoch, fold)
         
-        epoch_f1 = f1_score(epoch_preds, epoch_labels, num_classes=self.n_classes, average='macro')
-        self.log(f"{mode}_f1", epoch_f1, logger=True)  
+        best_loss = valid_loss if valid_loss < best_loss else best_loss
+        best_acc = valid_acc if valid_acc > best_acc else best_acc
+        if valid_f1 > best_f1:
+            best_f1 = valid_f1
+            print("model saving!", end="")
+            torch.save(model.state_dict(), MODELS_DIR + f"best_{MODEL_NAME}_{fold}.pth")
+        print("\n")
 
-    def validation_epoch_end(self, outputs, mode="val"):
-        epoch_preds = torch.cat([x['batch_preds'] for x in outputs])
-        epoch_labels = torch.cat([x['batch_labels'] for x in outputs])
-        epoch_loss = self.criterion(epoch_preds, epoch_labels)
-        self.log(f"{mode}_loss", epoch_loss, logger=True)
-
-        num_correct = (epoch_preds.argmax(dim=1) == epoch_labels).sum().item()
-        epoch_accuracy = num_correct / len(epoch_labels)
-        self.log(f"{mode}_accuracy", epoch_accuracy, logger=True)
-        
-        epoch_f1 = f1_score(epoch_preds, epoch_labels, num_classes=self.n_classes, average='macro')
-        self.log(f"{mode}_f1", epoch_f1, logger=True)                    
-
-    def test_epoch_end(self, outputs):
-        return self.validation_epoch_end(outputs, "test")
-
-    def configure_optimizers(self):
-        return optim.Adam(self.parameters(), lr=self.lr)
+    return best_f1
 
 
-def make_callbacks(min_delta, patience, checkpoint_path):
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=checkpoint_path,
-        filename="{epoch}",
-        save_top_k=2,
-        verbose=True,
-        monitor="val_loss",
-        mode="min",
-    )
+def main():
+    seed_everything(SEED)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        current_device = torch.cuda.current_device()
+        print("Device:", torch.cuda.get_device_name(current_device))
 
-    early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=min_delta, patience=patience, mode="min"
-    )
-
-    return [early_stop_callback, checkpoint_callback]
-
-
-@hydra.main(config_path=".", config_name="config")
-def main(cfg: DictConfig):
-    pl.seed_everything(cfg.training.pl_seed, workers=True)
-    cwd = hydra.utils.get_original_cwd()
-    wandb_logger = WandbLogger(
-        name=("exp_" + str(cfg.wandb.exp_num)),
-        project=cfg.wandb.project,
-        tags=cfg.wandb.tags,
-        log_model=True,
-    )
-    checkpoint_path = os.path.join(
-        wandb_logger.experiment.dir, cfg.path.checkpoint_path
-    )
-    wandb_logger.log_hyperparams(cfg)
-
-    train_df = pd.read_csv(cfg.path.train_file_name)
-    #train_df = train_df.rename(columns={'jobflag': 'label'})
-    test_df = pd.read_csv(cfg.path.test_file_name)
-    test_df["jobflag"] = 0
+    train_df = pd.read_csv(TRAIN_FILE)
     train_df["jobflag"] = train_df["jobflag"] - 1
     train_df = preprocess(train_df)
+    test_df = pd.read_csv(TEST_FILE)
+    test_df["jobflag"] = 0
     test_df = preprocess(test_df)
-    #trn_fold = [0, 1, 2, 3, 4]
-    #if cfg.training.fold == 'kf':
-    #    folds = get_kfold(train=train_df, n_splits=5, seed=cfg.training.pl_seed)
-    #if cfg.training.fold == 'skf':
-    #    folds = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=5, seed=cfg.training.pl_seed)
+
+    trn_fold = range(NUM_SPLITS)
+    if FOLD_TYPE == 'kf':
+        fold_indices = get_kfold(train=train_df, n_splits=NUM_SPLITS, seed=SEED)
+    if FOLD_TYPE == 'skf':
+        fold_indices = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=NUM_SPLITS, seed=SEED)
+
+    # training
+    f1_scores = []
+    for fold in trn_fold:
+        print(f"fold {fold}", "="*80)
+        f1 = trainer(fold, fold_indices, train_df)
+        f1_scores.append(f1)
+        print(f"<fold={fold}> best score: {f1}\n")
+    
+    cv = sum(f1_scores) / len(f1_scores)
+    print(f"CV: {cv}")
+
+    lines = ""
+    for i, f1 in enumerate(f1_scores):
+        line = f"fold={i}: {f1}\n"
+        lines += line
+    lines += f"CV    : {cv}"
+    with open(f"./result/{MODEL_NAME}_result.txt", mode='w') as f:
+        f.write(lines)
+
+    # inference
+    models = []
+    for fold in trn_fold:
+        model = Classifier(MODEL_NAME)
+        model.load_state_dict(torch.load(MODELS_DIR + f"best_{MODEL_NAME}_{fold}.pth"))
+        model.to(DEVICE)
+        model.eval()
+        models.append(model)
 
 
-    train_df_fold, valid_df_fold = train_test_split(train_df, test_size=cfg.training.test_size, shuffle=True, random_state=cfg.training.pl_seed)
-    data_module = CreateDataModule(
-        train_df=train_df_fold,
-        valid_df=valid_df_fold,
-        test_df=test_df,
-        batch_size=cfg.training.batch_size,
-        max_token_len=cfg.model.max_token_len,
-    )
-    data_module.setup(stage='fit')
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    test_dataset = MyDataset(data=test_df, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False)
 
-    call_backs = make_callbacks(
-        cfg.callbacks.patience_min_delta, cfg.callbacks.patience, checkpoint_path
-    )
+    with torch.no_grad():
+        progress = tqdm(test_dataloader, total=len(test_dataloader))
+        final_output = []
 
-    model = Classifier(
-        n_classes=cfg.model.n_classes,
-        n_linears=cfg.model.n_linears,
-        d_hidden_linear=cfg.model.d_hidden_linear,
-        dropout_rate=cfg.model.dropout_rate,
-        learning_rate=cfg.training.learning_rate,
-        pooling_type=cfg.model.pooling_type,
-    )
-    trainer = pl.Trainer(
-        max_epochs=cfg.training.n_epochs,
-        devices=cfg.training.n_gpus,
-        accelerator="gpu",
-        #progress_bar_refresh_rate=30,
-        callbacks=call_backs,
-        logger=wandb_logger,
-        deterministic=True,
-    )
-    trainer.fit(model, data_module)
+        for batch in progress:
+            progress.set_description("<Test>")
 
-    data_module.setup(stage='test')                       
-    results = trainer.test(ckpt_path=call_backs[1].best_model_path, datamodule=data_module)                      
-    print(results)
+            outputs = []
+            for model in models:
+                output = model(batch["input_ids"], batch["attention_mask"])
+                outputs.append(output)
 
-if __name__ == "__main__":
+            outputs = sum(outputs) / len(outputs)
+            outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
+            outputs = np.argmax(outputs, axis=1)
+
+            final_output.extend(outputs)
+    
+    submit = pd.read_csv(os.path.join(DATA_PATH, "submit_sample.csv"), names=["id", "jobflag"])
+    submit["jobflag"] = final_output
+    submit["jobflag"] = submit["jobflag"] + 1
+    try:
+        submit.to_csv("./output/submission_cv{}.csv".format(str(cv).replace(".", "")[:10]), index=False, header=False)
+    except NameError:
+        submit.to_csv("./output/submission.csv", index=False, header=False)
+
+
+if __name__ == '__main__':
     main()
