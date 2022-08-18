@@ -1,7 +1,7 @@
 '''
 add scheduler
 change model parameter, lr
-microsoft/deberta-base
+microsoft/deberta-large
 cls
 MacroSoftF1Loss 削除
 CV=
@@ -32,9 +32,9 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_9"
+EXP_NUM = "exp_10"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'microsoft/deberta-base'
+MODEL_NAME = 'microsoft/deberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
