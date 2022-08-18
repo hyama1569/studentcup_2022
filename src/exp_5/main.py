@@ -1,6 +1,6 @@
 '''
 add scheduler
-deberta-large
+deberta-v3-large
 cls
 CV=
 LB=
@@ -32,7 +32,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 SEED = 42
 EXP_NUM = "exp_5"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'roberta-large'
+MODEL_NAME = 'deberta-v3-large'
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 0.01
