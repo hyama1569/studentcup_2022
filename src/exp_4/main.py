@@ -30,7 +30,7 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_2"
+EXP_NUM = "exp_4"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'roberta-large'
 TRAIN_BATCH_SIZE = 32

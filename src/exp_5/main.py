@@ -1,7 +1,7 @@
 '''
 add scheduler
-roberta-large
-max
+deberta-large
+cls
 CV=
 LB=
 '''
@@ -30,7 +30,7 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_3"
+EXP_NUM = "exp_5"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'roberta-large'
 TRAIN_BATCH_SIZE = 32
@@ -40,8 +40,8 @@ DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
-#POOLING_TYPE = 'cls'
-POOLING_TYPE = 'max'
+POOLING_TYPE = 'cls'
+#POOLING_TYPE = 'max'
 #POOLING_TYPE = 'concat'
 EPOCHS = 15
 #FOLD_TYPE = 'kf'

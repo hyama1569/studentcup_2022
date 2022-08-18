@@ -2,7 +2,7 @@
 add scheduler
 roberta-large
 cls
-CV=
+CV=0.6729360954941948
 LB=
 '''
 import collections
