@@ -1,8 +1,10 @@
 '''
 add scheduler
-roberta-large
-concat
-CV=0.6295133557888904
+change model parameter, lr
+microsoft/deberta-base
+cls
+MacroSoftF1Loss 削除
+CV=
 LB=
 '''
 import collections
@@ -30,20 +32,21 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_4"
+EXP_NUM = "exp_8"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'roberta-large'
+MODEL_NAME = 'microsoft/deberta-base'
+MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
-LEARNING_RATE = 0.01
+LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
-#POOLING_TYPE = 'cls'
+POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
-POOLING_TYPE = 'concat'
-EPOCHS = 15
+#POOLING_TYPE = 'concat'
+EPOCHS = 20
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4
@@ -144,6 +147,8 @@ class Classifier(nn.Module):
             classifier_hidden_size = self.bert.config.hidden_size
 
         self.classifier = nn.Linear(classifier_hidden_size, n_classes)
+        nn.init.normal_(self.classifier.weight, std=0.02)
+        nn.init.zeros_(self.classifier.bias)
         
         #self.lr = learning_rate
         self.dropout = nn.Dropout(dropout_rate)
@@ -151,20 +156,14 @@ class Classifier(nn.Module):
         self.n_classes = n_classes
         self.pooling_type = pooling_type
 
-        for param in self.bert.parameters():
-            param.requires_grad = False
-        for param in self.bert.encoder.layer[-1].parameters():
-            param.requires_grad = True
-        for param in self.classifier.parameters():
-            param.requires_grad = True
 
     def forward(self, input_ids, attention_mask):
         output = self.bert(input_ids, attention_mask=attention_mask)
         if self.pooling_type == 'cls':
-            cls = output.pooler_output
+            cls = output.hidden_states[-1][:,0]
             preds = self.classifier(self.dropout(cls))
         if self.pooling_type == 'max':
-            mp = output.last_hidden_state.max(1)[0]
+            mp = output.hidden_states[-1][:,0].max(1)[0]
             preds = self.classifier(self.dropout(mp))
         if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
@@ -339,7 +338,7 @@ def trainer(fold, fold_indices, df):
         if valid_f1 > best_f1:
             best_f1 = valid_f1
             print("model saving!", end="")
-            torch.save(model.state_dict(), MODELS_DIR + f"best_{MODEL_NAME}_{fold}.pth")
+            torch.save(model.state_dict(), MODELS_DIR + f"best_{MODEL_NAME_DIR}_{fold}.pth")
 
         print("\n")
 
@@ -383,7 +382,7 @@ def main():
         line = f"fold={i}: {f1}\n"
         lines += line
     lines += f"CV    : {cv}"
-    with open(f"./result/{MODEL_NAME}_result.txt", mode='w') as f:
+    with open(f"./result/{MODEL_NAME_DIR}_result.txt", mode='w') as f:
         f.write(lines)
 
     # inference
@@ -391,7 +390,7 @@ def main():
     for fold in trn_fold:
         model = Classifier(n_classes=NUM_CLASSES, d_hidden_linear=D_HIDDEN_LINEAR,
                            dropout_rate=DROPOUT_RATE, pooling_type=POOLING_TYPE)
-        model.load_state_dict(torch.load(MODELS_DIR + f"best_{MODEL_NAME}_{fold}.pth"))
+        model.load_state_dict(torch.load(MODELS_DIR + f"best_{MODEL_NAME_DIR}_{fold}.pth"))
         model.to(DEVICE)
         model.eval()
         models.append(model)

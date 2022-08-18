@@ -104,15 +104,17 @@ class MacroSoftF1Loss(nn.Module):
         FP = torch.sum((1-torch.argmax(input, axis=1)) == target)
         FN = torch.sum(torch.argmax(input, axis=1) == (1-target))
         F1_class1 = 2 * TP / (2 * TP + FP + FN + 1e-8)
-        loss_class1 = 1 - F1_class1
+        loss_class1 = (1 - F1_class1).float()
+        loss_class1.requires_grad = True
         if self._consider_true_negative:
-            TN = torch.sum((1 - input) * (1 - target), dim=0)
+            TN = torch.sum(1-torch.argmax(input, axis=1) == (1-target))
             F1_class0 = 2*TN/(2*TN + FP + FN + 1e-8)
-            loss_class0 = 1 - F1_class0
+            loss_class0 = (1 - F1_class0).float()
+            loss_class0.requires_grad = True
             loss = (loss_class0 + loss_class1)*0.5
         else:
             loss = loss_class1
-        macro_loss = loss.mean()
+        macro_loss = torch.mean(loss)
         return macro_loss
 
 class MyDataset(Dataset):
