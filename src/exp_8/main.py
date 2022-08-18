@@ -36,7 +36,7 @@ EXP_NUM = "exp_8"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'microsoft/deberta-base'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
-TRAIN_BATCH_SIZE = 32
+TRAIN_BATCH_SIZE = 16
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
@@ -97,9 +97,12 @@ class MacroSoftF1Loss(nn.Module):
             input = input_
         else:
             input = torch.sigmoid(input_)
-        TP = torch.sum(input * target, dim=0)
-        FP = torch.sum((1 - input) * target, dim=0)
-        FN = torch.sum(input * (1 - target), dim=0)
+        #TP = torch.sum(input * target, dim=0)
+        #FP = torch.sum((1 - input) * target, dim=0)
+        #FN = torch.sum(input * (1 - target), dim=0)
+        TP = torch.sum(torch.argmax(input, axis=1) == target)
+        FP = torch.sum((1-torch.argmax(input, axis=1)) == target)
+        FN = torch.sum(torch.argmax(input, axis=1) == (1-target))
         F1_class1 = 2 * TP / (2 * TP + FP + FN + 1e-8)
         loss_class1 = 1 - F1_class1
         if self._consider_true_negative:
