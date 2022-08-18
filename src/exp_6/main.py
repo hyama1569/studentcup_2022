@@ -1,6 +1,6 @@
 '''
 add scheduler
-microfoft/deberta-v3-large
+microsoft/deberta-v3-large
 max
 CV=
 LB=
@@ -32,7 +32,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 SEED = 42
 EXP_NUM = "exp_6"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'microfoft/deberta-v3-large'
+MODEL_NAME = 'microsoft/deberta-v3-large'
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 0.01
