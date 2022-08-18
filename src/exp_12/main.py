@@ -4,7 +4,7 @@ change model parameter, lr
 google/electra-large-generator
 cls
 MacroSoftF1Loss 削除
-CV=
+CV=0.7030224787912855
 LB=
 '''
 import collections

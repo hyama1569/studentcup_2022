@@ -2,9 +2,9 @@
 add scheduler
 change model parameter, lr
 microsoft/deberta-large
-cls
+concat
 MacroSoftF1Loss 削除
-CV=0.7344209617811523
+CV=
 LB=
 '''
 import collections
@@ -32,7 +32,7 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_10"
+EXP_NUM = "exp_14"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'microsoft/deberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
@@ -43,10 +43,10 @@ DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
-POOLING_TYPE = 'cls'
+#POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
-#POOLING_TYPE = 'concat'
-EPOCHS = 20
+POOLING_TYPE = 'concat'
+EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4

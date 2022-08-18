@@ -4,7 +4,11 @@ change model parameter, lr
 microsoft/deberta-large
 cls
 MacroSoftF1Loss 削除
-CV=0.7344209617811523
+add meta_features + meta_features_encoder
+change preprocess
+layer re-initialization
+
+CV=
 LB=
 '''
 import collections
@@ -32,7 +36,7 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_10"
+EXP_NUM = "exp_15"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'microsoft/deberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
@@ -40,13 +44,14 @@ TRAIN_BATCH_SIZE = 4
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
+REINIT_LAYERS = 6
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
 POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
 #POOLING_TYPE = 'concat'
-EPOCHS = 20
+EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4
@@ -83,7 +88,22 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
     for fold, (idx_train, idx_valid) in enumerate(generator):
         fold_series.append(pd.Series(fold, index=idx_valid))
     fold_series = pd.concat(fold_series).sort_index()
-    return fold_series
+ 
+def reinit_bert(model):
+    for layer in model.bert.encoder.layer[-REINIT_LAYERS:]:
+        for module in layer.modules():
+            if isinstance(module, nn.Linear):
+                module.weight.data.normal_(mean=0.0, std=model.config.initializer_range)
+                if module.bias is not None:
+                    module.bias.data.zero_()
+            elif isinstance(module, nn.Embedding):
+                module.weight.data.normal_(mean=0.0, std=model.config.initializer_range)
+                if module.padding_idx is not None:
+                    module.weight.data[module.padding_idx].zero_()
+            elif isinstance(module, nn.LayerNorm):
+                module.bias.data.zero_()
+                module.weight.data.fill_(1.0)
+    return model
 
 class MyDataset(Dataset):
     def __init__(
@@ -140,7 +160,6 @@ class Classifier(nn.Module):
     ):
         super().__init__()
         self.bert = AutoModel.from_pretrained(pretrained_model, output_hidden_states=True, return_dict=True)
-        
         if pooling_type == 'concat':
             classifier_hidden_size = self.bert.config.hidden_size * 4
         else:
@@ -295,6 +314,7 @@ def trainer(fold, fold_indices, df):
     model = Classifier(n_classes=NUM_CLASSES, d_hidden_linear=D_HIDDEN_LINEAR,
                        dropout_rate=DROPOUT_RATE, pooling_type=POOLING_TYPE,
                        )
+    model = reinit_bert(model)
     model = model.to(DEVICE)
 
     #criterion = nn.CrossEntropyLoss()
