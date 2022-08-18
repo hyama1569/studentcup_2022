@@ -1,7 +1,9 @@
 '''
 add scheduler
+change model parameter, lr
 microsoft/deberta-base
 cls
+MacroSoftF1Loss
 CV=
 LB=
 '''
@@ -36,7 +38,7 @@ MODEL_NAME = 'microsoft/deberta-base'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
-LEARNING_RATE = 0.01
+LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
@@ -82,6 +84,33 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
         fold_series.append(pd.Series(fold, index=idx_valid))
     fold_series = pd.concat(fold_series).sort_index()
     return fold_series
+
+class MacroSoftF1Loss(nn.Module):
+    def __init__(self, consider_true_negative=True, sigmoid_is_applied_to_input=False):
+        super(MacroSoftF1Loss, self).__init__()
+        self._consider_true_negative = consider_true_negative
+        self._sigmoid_is_applied_to_input = sigmoid_is_applied_to_input
+
+    def forward(self, input_, target):
+        target = target.float()
+        if self._sigmoid_is_applied_to_input:
+            input = input_
+        else:
+            input = torch.sigmoid(input_)
+        TP = torch.sum(input * target, dim=0)
+        FP = torch.sum((1 - input) * target, dim=0)
+        FN = torch.sum(input * (1 - target), dim=0)
+        F1_class1 = 2 * TP / (2 * TP + FP + FN + 1e-8)
+        loss_class1 = 1 - F1_class1
+        if self._consider_true_negative:
+            TN = torch.sum((1 - input) * (1 - target), dim=0)
+            F1_class0 = 2*TN/(2*TN + FP + FN + 1e-8)
+            loss_class0 = 1 - F1_class0
+            loss = (loss_class0 + loss_class1)*0.5
+        else:
+            loss = loss_class1
+        macro_loss = loss.mean()
+        return macro_loss
 
 class MyDataset(Dataset):
     def __init__(
@@ -145,19 +174,15 @@ class Classifier(nn.Module):
             classifier_hidden_size = self.bert.config.hidden_size
 
         self.classifier = nn.Linear(classifier_hidden_size, n_classes)
+        nn.init.normal_(self.classifier.weight, std=0.02)
+        nn.init.zeros_(self.classifier.bias)
         
         #self.lr = learning_rate
         self.dropout = nn.Dropout(dropout_rate)
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = MacroSoftF1Loss()
         self.n_classes = n_classes
         self.pooling_type = pooling_type
 
-        for param in self.bert.parameters():
-            param.requires_grad = False
-        for param in self.bert.encoder.layer[-1].parameters():
-            param.requires_grad = True
-        for param in self.classifier.parameters():
-            param.requires_grad = True
 
     def forward(self, input_ids, attention_mask):
         output = self.bert(input_ids, attention_mask=attention_mask)
