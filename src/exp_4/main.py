@@ -1,7 +1,7 @@
 '''
 add scheduler
 roberta-large
-cls
+concat
 CV=
 LB=
 '''
@@ -40,9 +40,9 @@ DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
-POOLING_TYPE = 'cls'
+#POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
-#POOLING_TYPE = 'concat'
+POOLING_TYPE = 'concat'
 EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
