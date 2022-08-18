@@ -4,8 +4,8 @@ change model parameter, lr
 microsoft/deberta-base
 cls
 MacroSoftF1Loss 削除
-CV=
-LB=
+CV=0.7331299820649656
+LB=0.7413204
 '''
 import collections
 import os

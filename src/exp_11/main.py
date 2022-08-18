@@ -1,10 +1,10 @@
 '''
 add scheduler
 change model parameter, lr
-microsoft/deberta-base
+google/electra-base-generator
 cls
-MacroSoftF1Loss
-CV=0.12076549831431779
+MacroSoftF1Loss 削除
+CV=
 LB=
 '''
 import collections
@@ -32,11 +32,11 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_8"
+EXP_NUM = "exp_11"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'microsoft/deberta-base'
+MODEL_NAME = 'google/electra-base-generator'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
-TRAIN_BATCH_SIZE = 16
+TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
@@ -46,7 +46,7 @@ D_HIDDEN_LINEAR = 128
 POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
 #POOLING_TYPE = 'concat'
-EPOCHS = 20
+EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4
@@ -84,38 +84,6 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
         fold_series.append(pd.Series(fold, index=idx_valid))
     fold_series = pd.concat(fold_series).sort_index()
     return fold_series
-
-class MacroSoftF1Loss(nn.Module):
-    def __init__(self, consider_true_negative=True, sigmoid_is_applied_to_input=False):
-        super(MacroSoftF1Loss, self).__init__()
-        self._consider_true_negative = consider_true_negative
-        self._sigmoid_is_applied_to_input = sigmoid_is_applied_to_input
-
-    def forward(self, input_, target):
-        target = target.float()
-        if self._sigmoid_is_applied_to_input:
-            input = input_
-        else:
-            input = torch.sigmoid(input_)
-        #TP = torch.sum(input * target, dim=0)
-        #FP = torch.sum((1 - input) * target, dim=0)
-        #FN = torch.sum(input * (1 - target), dim=0)
-        TP = torch.sum(torch.argmax(input, axis=1) == target)
-        FP = torch.sum((1-torch.argmax(input, axis=1)) == target)
-        FN = torch.sum(torch.argmax(input, axis=1) == (1-target))
-        F1_class1 = 2 * TP / (2 * TP + FP + FN + 1e-8)
-        loss_class1 = (1 - F1_class1).float()
-        loss_class1.requires_grad = True
-        if self._consider_true_negative:
-            TN = torch.sum(1-torch.argmax(input, axis=1) == (1-target))
-            F1_class0 = 2*TN/(2*TN + FP + FN + 1e-8)
-            loss_class0 = (1 - F1_class0).float()
-            loss_class0.requires_grad = True
-            loss = (loss_class0 + loss_class1)*0.5
-        else:
-            loss = loss_class1
-        macro_loss = torch.mean(loss)
-        return macro_loss
 
 class MyDataset(Dataset):
     def __init__(
@@ -184,7 +152,7 @@ class Classifier(nn.Module):
         
         #self.lr = learning_rate
         self.dropout = nn.Dropout(dropout_rate)
-        self.criterion = MacroSoftF1Loss()
+        self.criterion = nn.CrossEntropyLoss()
         self.n_classes = n_classes
         self.pooling_type = pooling_type
 
