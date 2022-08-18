@@ -1,10 +1,10 @@
 '''
 add scheduler
 change model parameter, lr
-google/electra-base-generator
+google/electra-large-generator
 cls
 MacroSoftF1Loss 削除
-CV=0.6766782959273034
+CV=
 LB=
 '''
 import collections
@@ -32,9 +32,9 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_11"
+EXP_NUM = "exp_12"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'google/electra-base-generator'
+MODEL_NAME = 'google/electra-large-generator'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
