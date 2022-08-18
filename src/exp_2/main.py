@@ -1,7 +1,9 @@
 '''
-baseline
-CV=0.5791354278980456
-LB=0.6081358
+add scheduler
+roberta-large
+cls
+CV=
+LB=
 '''
 import collections
 import os
@@ -20,6 +22,7 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from tqdm import tqdm
 from transformers import AdamW, AutoModel, AutoTokenizer
 from torch.utils.data import DataLoader, Dataset
+from transformers import get_cosine_schedule_with_warmup
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 TRAIN_FILE = os.path.join(DATA_PATH, "train.csv")
@@ -27,24 +30,23 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_1"
+EXP_NUM = "exp_2"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'bert-base-uncased'
+MODEL_NAME = 'roberta-large'
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 0.01
 DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
-N_LINEARS = 1
 D_HIDDEN_LINEAR = 128
 POOLING_TYPE = 'cls'
-POOLING_TYPE = 'max'
-POOLING_TYPE = 'concat'
-EPOCHS = 20
+#POOLING_TYPE = 'max'
+#POOLING_TYPE = 'concat'
+EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
-NUM_SPLITS = 5
+NUM_SPLITS = 4
 
 
 def seed_everything(seed):
@@ -126,7 +128,7 @@ class Classifier(nn.Module):
     def __init__(
         self, 
         n_classes: int, 
-        n_linears: int,
+        #n_linears: int,
         d_hidden_linear: int,
         dropout_rate: float,
         #learning_rate: float,
@@ -141,20 +143,7 @@ class Classifier(nn.Module):
         else:
             classifier_hidden_size = self.bert.config.hidden_size
 
-        if n_linears == 1:
-            self.classifier = nn.Linear(classifier_hidden_size, n_classes)
-        else:
-            classifier = nn.Sequential(
-                nn.Linear(classifier_hidden_size, d_hidden_linear),
-                nn.Sigmoid(),
-                nn.Dropout(p=dropout_rate),
-            )
-            for i in range(n_linears-1):
-                classifier.add_module('fc_{}'.format(i), nn.Linear(d_hidden_linear, d_hidden_linear))
-                classifier.add_module('activate_{}'.format(i), nn.Sigmoid())
-                classifier.add_module('dropout_{}'.format(i), nn.Dropout(p=dropout_rate))
-            classifier.add_module('fc_last', nn.Linear(d_hidden_linear, n_classes))
-            self.classifier = classifier
+        self.classifier = nn.Linear(classifier_hidden_size, n_classes)
         
         #self.lr = learning_rate
         self.dropout = nn.Dropout(dropout_rate)
@@ -173,18 +162,18 @@ class Classifier(nn.Module):
         output = self.bert(input_ids, attention_mask=attention_mask)
         if self.pooling_type == 'cls':
             cls = output.pooler_output
-            preds = self.classifier(cls)
+            preds = self.classifier(self.dropout(cls))
         if self.pooling_type == 'max':
             mp = output.last_hidden_state.max(1)[0]
-            preds = self.classifier(mp)
+            preds = self.classifier(self.dropout(mp))
         if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
-            preds = self.classifier(clses)
+            preds = self.classifier(self.dropout(clses))
         #preds = self.classifier(output.pooler_output)
         #preds = torch.flatten(preds)
         return preds, output
       
-def train_fn(dataloader, model, optimizer, epoch):
+def train_fn(dataloader, model, optimizer, scheduler, epoch):
     model.train()
     total_loss = 0
     total_corrects = 0
@@ -199,13 +188,13 @@ def train_fn(dataloader, model, optimizer, epoch):
         labels = batch["labels"].to(DEVICE)
 
         optimizer.zero_grad()
-        preds, output = model.forward(input_ids=input_ids,
+        preds, _ = model.forward(input_ids=input_ids,
                                      attention_mask=attention_mask)
         loss = model.criterion(preds, labels)
 
         loss.backward()
         optimizer.step()
-        #scheduler.step()
+        scheduler.step()
 
         preds = torch.argmax(preds, axis=1)
         total_loss += loss.item()
@@ -238,7 +227,7 @@ def eval_fn(dataloader, model, epoch):
             attention_mask=batch["attention_mask"].to(DEVICE)
             labels = batch["labels"].to(DEVICE)
 
-            preds, output = model.forward(input_ids=input_ids,
+            preds, _ = model.forward(input_ids=input_ids,
                                      attention_mask=attention_mask)
             loss = model.criterion(preds, labels)
 
@@ -304,15 +293,19 @@ def trainer(fold, fold_indices, df):
         valid_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False
     )
 
-    model = Classifier(n_classes=NUM_CLASSES, n_linears=N_LINEARS, d_hidden_linear=D_HIDDEN_LINEAR,
+    model = Classifier(n_classes=NUM_CLASSES, d_hidden_linear=D_HIDDEN_LINEAR,
                        dropout_rate=DROPOUT_RATE, pooling_type=POOLING_TYPE,
                        )
     model = model.to(DEVICE)
 
     #criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
-    #scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100000, gamma=1.0)
-    # ダミーのスケジューラー
+    scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_training_steps=EPOCHS * len(train_dataloader),
+        num_warmup_steps=50
+    )
+
 
     train_losses = []
     train_accs = []
@@ -396,7 +389,7 @@ def main():
     # inference
     models = []
     for fold in trn_fold:
-        model = Classifier(n_classes=NUM_CLASSES, n_linears=N_LINEARS, d_hidden_linear=D_HIDDEN_LINEAR,
+        model = Classifier(n_classes=NUM_CLASSES, d_hidden_linear=D_HIDDEN_LINEAR,
                            dropout_rate=DROPOUT_RATE, pooling_type=POOLING_TYPE)
         model.load_state_dict(torch.load(MODELS_DIR + f"best_{MODEL_NAME}_{fold}.pth"))
         model.to(DEVICE)
