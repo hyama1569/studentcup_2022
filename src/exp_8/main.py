@@ -1,6 +1,6 @@
 '''
 add scheduler
-roberta-base
+microsoft/deberta-base
 cls
 CV=
 LB=
@@ -32,7 +32,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 SEED = 42
 EXP_NUM = "exp_8"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'roberta-base'
+MODEL_NAME = 'microsoft/deberta-base'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 32
 VALID_BATCH_SIZE = 64
@@ -41,9 +41,9 @@ DROPOUT_RATE = 0.1
 NUM_CLASSES = 4
 MAX_TOKEN_LEN = 512
 D_HIDDEN_LINEAR = 128
-#POOLING_TYPE = 'cls'
+POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
-POOLING_TYPE = 'concat'
+#POOLING_TYPE = 'concat'
 EPOCHS = 20
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
