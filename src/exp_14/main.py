@@ -4,7 +4,7 @@ change model parameter, lr
 microsoft/deberta-large
 concat
 MacroSoftF1Loss 削除
-CV=
+CV=0.7264100497936498
 LB=
 '''
 import collections
@@ -163,7 +163,7 @@ class Classifier(nn.Module):
             cls = output.hidden_states[-1][:,0]
             preds = self.classifier(self.dropout(cls))
         if self.pooling_type == 'max':
-            mp = output.hidden_states[-1][:,0].max(1)[0]
+            mp = output.hidden_states[-1].max(1)[0]
             preds = self.classifier(self.dropout(mp))
         if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)

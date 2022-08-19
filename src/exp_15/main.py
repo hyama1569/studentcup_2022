@@ -4,8 +4,6 @@ change model parameter, lr
 microsoft/deberta-large
 cls
 MacroSoftF1Loss 削除
-add meta_features + meta_features_encoder
-change preprocess
 layer re-initialization
 
 CV=
@@ -93,11 +91,11 @@ def reinit_bert(model):
     for layer in model.bert.encoder.layer[-REINIT_LAYERS:]:
         for module in layer.modules():
             if isinstance(module, nn.Linear):
-                module.weight.data.normal_(mean=0.0, std=model.config.initializer_range)
+                module.weight.data.normal_(mean=0.0, std=model.bert.config.initializer_range)
                 if module.bias is not None:
                     module.bias.data.zero_()
             elif isinstance(module, nn.Embedding):
-                module.weight.data.normal_(mean=0.0, std=model.config.initializer_range)
+                module.weight.data.normal_(mean=0.0, std=model.bert.config.initializer_range)
                 if module.padding_idx is not None:
                     module.weight.data[module.padding_idx].zero_()
             elif isinstance(module, nn.LayerNorm):
@@ -182,7 +180,7 @@ class Classifier(nn.Module):
             cls = output.hidden_states[-1][:,0]
             preds = self.classifier(self.dropout(cls))
         if self.pooling_type == 'max':
-            mp = output.hidden_states[-1][:,0].max(1)[0]
+            mp = output.hidden_states[-1].max(1)[0]
             preds = self.classifier(self.dropout(mp))
         if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
