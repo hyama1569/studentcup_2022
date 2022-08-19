@@ -86,6 +86,7 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
     for fold, (idx_train, idx_valid) in enumerate(generator):
         fold_series.append(pd.Series(fold, index=idx_valid))
     fold_series = pd.concat(fold_series).sort_index()
+    return fold_series
  
 def reinit_bert(model):
     for layer in model.bert.encoder.layer[-REINIT_LAYERS:]:
@@ -143,6 +144,7 @@ class MyDataset(Dataset):
             input_ids=encoding["input_ids"].flatten(),
             attention_mask=encoding["attention_mask"].flatten(),
             labels=torch.tensor(jobflag_name),
+            ids=torch.tensor(id),
         )
 
 class Classifier(nn.Module):
@@ -413,8 +415,50 @@ def main():
         model.eval()
         models.append(model)
 
-
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+    ## valid prediction for stacking
+    if FOLD_TYPE == 'kf':
+        fold_indices = get_kfold(train=train_df, n_splits=NUM_SPLITS, seed=SEED)
+    if FOLD_TYPE == 'skf':
+        fold_indices = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=NUM_SPLITS, seed=SEED)
+    
+    valid_predict_df = pd.DataFrame()
+    for fold in trn_fold:
+        #train_df_fold = train_df.loc[fold_indices!=fold].reset_index(drop=True)
+        valid_df_fold = train_df.loc[fold_indices==fold].reset_index(drop=True)
+        #train_dataset = MyDataset(data=train_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+        valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+        #train_dataloader = torch.utils.data.DataLoader(
+        #    train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
+        #)
+        valid_dataloader = torch.utils.data.DataLoader(
+            valid_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False
+        )
+        model = models[fold]
+        model = model.to(DEVICE)
+        with torch.no_grad():
+            progress = tqdm(valid_dataloader, total=len(valid_dataloader))
+            ids_ls = []
+            preds_ls = []
+
+            for batch in progress:
+                progress.set_description("<Valid for stacking>")
+                input_ids = batch["input_ids"].to(DEVICE)
+                attention_mask=batch["attention_mask"].to(DEVICE)
+                ids = batch["ids"]
+                preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask)
+                preds = preds.cpu().detach().tolist()
+                ids_ls.extend(ids)
+                preds_ls.extend(preds)
+            valid_predict_df_fold = pd.DataFrame(preds_ls, columns=[EXP_NUM + '_predict_0', EXP_NUM + '_predict_1', EXP_NUM + '_predict_2', EXP_NUM + '_predict_3'])
+            valid_predict_df_fold["id"] = ids_ls
+            valid_predict_df = pd.concat([valid_predict_df, valid_predict_df_fold])
+    valid_predict_df = valid_predict_df.sort_values('id', ascending=True)
+    valid_predict_df.to_csv("./output/valid_predict_" + EXP_NUM + "_cv{}.csv".format(str(cv).replace(".", "")[:10]), index=False, header=True)
+
+
+    ## test prediction for single model output & for stacking
     test_dataset = MyDataset(data=test_df, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False)
 
@@ -422,10 +466,13 @@ def main():
         progress = tqdm(test_dataloader, total=len(test_dataloader))
         final_output = []
 
+        ids_ls = []
+        preds_ls = []
         for batch in progress:
             progress.set_description("<Test>")
             input_ids = batch["input_ids"].to(DEVICE)
             attention_mask=batch["attention_mask"].to(DEVICE)
+            ids = batch["ids"]
             #labels = batch["labels"].to(DEVICE)
 
             outputs = []
@@ -435,11 +482,18 @@ def main():
                 outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
+            preds_ls.extend(outputs)
+            ids_ls.extend(ids)
+
             outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
             outputs = np.argmax(outputs, axis=1)
 
             final_output.extend(outputs)
+        test_predict_df = pd.DataFrame(preds_ls, columns=[EXP_NUM + '_predict_0', EXP_NUM + '_predict_1', EXP_NUM + '_predict_2', EXP_NUM + '_predict_3'])
+        test_predict_df["id"] = ids_ls
     
+    test_predict_df.to_csv("./output/test_predict_" + EXP_NUM + "_cv{}.csv".format(str(cv).replace(".", "")[:10]), index=False, header=True)
+
     submit = pd.read_csv(os.path.join(DATA_PATH, "submit_sample.csv"), names=["id", "jobflag"])
     submit["jobflag"] = final_output
     submit["jobflag"] = submit["jobflag"] + 1
