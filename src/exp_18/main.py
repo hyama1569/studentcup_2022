@@ -1,7 +1,7 @@
 '''
 add scheduler
 change model parameter, lr
-albert-xxlarge-v2
+google/electra-large-generator
 cls
 MacroSoftF1Loss 削除
 layer re-initialization
@@ -34,13 +34,13 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_17"
+EXP_NUM = "exp_18"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'albert-xxlarge-v2'
+MODEL_NAME = 'google/electra-large-generator'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 4
 VALID_BATCH_SIZE = 64
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 5e-5
 DROPOUT_RATE = 0.1
 REINIT_LAYERS = 6
 NUM_CLASSES = 4
@@ -89,7 +89,7 @@ def get_stratifiedkfold(train, target_col, n_splits, seed):
     return fold_series
  
 def reinit_bert(model):
-    for layer in model.bert.encoder.albert_layer_groups[-REINIT_LAYERS:]:
+    for layer in model.bert.encoder.layer[-REINIT_LAYERS:]:
         for module in layer.modules():
             if isinstance(module, nn.Linear):
                 module.weight.data.normal_(mean=0.0, std=model.bert.config.initializer_range)
@@ -446,7 +446,7 @@ def main():
                 progress.set_description("<Valid for stacking>")
                 input_ids = batch["input_ids"].to(DEVICE)
                 attention_mask=batch["attention_mask"].to(DEVICE)
-                ids = batch["ids"].tolist()
+                ids = batch["ids"]
                 preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask)
                 preds = preds.cpu().detach().tolist()
                 ids_ls.extend(ids)
@@ -472,7 +472,7 @@ def main():
             progress.set_description("<Test>")
             input_ids = batch["input_ids"].to(DEVICE)
             attention_mask=batch["attention_mask"].to(DEVICE)
-            ids = batch["ids"].tolist()
+            ids = batch["ids"]
             #labels = batch["labels"].to(DEVICE)
 
             outputs = []
@@ -482,7 +482,7 @@ def main():
                 outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
-            preds_ls.extend(outputs.cpu().detach().tolist())
+            preds_ls.extend(outputs)
             ids_ls.extend(ids)
 
             outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
