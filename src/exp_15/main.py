@@ -6,7 +6,7 @@ cls
 MacroSoftF1Loss 削除
 layer re-initialization
 
-CV=
+CV=0.7220325341112477
 LB=
 '''
 import collections

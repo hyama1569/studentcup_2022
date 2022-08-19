@@ -1,12 +1,12 @@
 '''
 add scheduler
 change model parameter, lr
-microsoft/deberta-v3-large
+albert-xxlarge-v2
 cls
 MacroSoftF1Loss 削除
 layer re-initialization
 
-CV=0.7338796459666659
+CV=
 LB=
 '''
 import collections
@@ -34,13 +34,13 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_16"
+EXP_NUM = "exp_17"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'microsoft/deberta-v3-large'
+MODEL_NAME = 'albert-xxlarge-v2'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
-TRAIN_BATCH_SIZE = 4
+TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
-LEARNING_RATE = 2e-5
+LEARNING_RATE = 1e-5
 DROPOUT_RATE = 0.1
 REINIT_LAYERS = 6
 NUM_CLASSES = 4
@@ -446,7 +446,7 @@ def main():
                 progress.set_description("<Valid for stacking>")
                 input_ids = batch["input_ids"].to(DEVICE)
                 attention_mask=batch["attention_mask"].to(DEVICE)
-                ids = batch["ids"]
+                ids = batch["ids"].tolist()
                 preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask)
                 preds = preds.cpu().detach().tolist()
                 ids_ls.extend(ids)
@@ -472,7 +472,7 @@ def main():
             progress.set_description("<Test>")
             input_ids = batch["input_ids"].to(DEVICE)
             attention_mask=batch["attention_mask"].to(DEVICE)
-            ids = batch["ids"]
+            ids = batch["ids"].tolist()
             #labels = batch["labels"].to(DEVICE)
 
             outputs = []
@@ -482,7 +482,7 @@ def main():
                 outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
-            preds_ls.extend(outputs)
+            preds_ls.extend(outputs.cpu().detach().tolist())
             ids_ls.extend(ids)
 
             outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
