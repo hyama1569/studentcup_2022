@@ -5,7 +5,6 @@ roberta-large
 cls
 MacroSoftF1Loss 削除
 layer re-initialization
-layerwise leanning rate
 
 CV=
 LB=
@@ -27,7 +26,7 @@ from sklearn.model_selection import StratifiedKFold, KFold
 from tqdm import tqdm
 from transformers import AdamW, AutoModel, AutoTokenizer
 from torch.utils.data import DataLoader, Dataset
-from transformers import get_linear_schedule_with_warmup
+from transformers import get_cosine_schedule_with_warmup
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 TRAIN_FILE = os.path.join(DATA_PATH, "train.csv")
@@ -35,15 +34,13 @@ TEST_FILE = os.path.join(DATA_PATH, "test.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_18"
+EXP_NUM = "exp_19"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'robert-large'
+MODEL_NAME = 'roberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
-LEARNING_RATE = 3e-5
-LR_DECAY = 0.01
-WEIGHT_DECAY = 0
+LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
 REINIT_LAYERS = 6
 NUM_CLASSES = 4
@@ -106,38 +103,6 @@ def reinit_bert(model):
                 module.bias.data.zero_()
                 module.weight.data.fill_(1.0)
     return model
-
-def get_optimizer_grouped_parameters(model):
-    model_type = 'bert'
-    no_decay = ["bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters()
-                       if 'lstm' in n
-                       or 'cnn' in n
-                       or 'regressor' in n],
-            "weight_decay": 0.0,
-            "lr": 1e-3,
-        },
-    ]
-    layers = [model.embeddings] + list(getattr(model, model_type).encoder.layer)
-    layers.reverse()
-    lr = LEARNING_RATE
-    for layer in layers:
-        lr *= LR_DECAY
-        optimizer_grouped_parameters += [
-            {
-                "params": [p for n, p in layer.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": WEIGHT_DECAY,
-                "lr": lr,
-            },
-            {
-                "params": [p for n, p in layer.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-                "lr": lr,
-            },
-        ]
-    return optimizer_grouped_parameters
 
 class MyDataset(Dataset):
     def __init__(
@@ -352,18 +317,14 @@ def trainer(fold, fold_indices, df):
     model = reinit_bert(model)
     model = model.to(DEVICE)
 
-    optimizer_grouped_parameters = get_optimizer_grouped_parameters(model)
-    optimizer = AdamW(
-        optimizer_grouped_parameters,
-        lr=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY,
-    )
-
-    scheduler = get_linear_schedule_with_warmup(
+    #criterion = nn.CrossEntropyLoss()
+    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+    scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_training_steps=EPOCHS * len(train_dataloader),
-        num_warmup_steps=EPOCHS * len(train_dataloader) * 0.01
+        num_warmup_steps=50
     )
+
 
     train_losses = []
     train_accs = []
