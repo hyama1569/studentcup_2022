@@ -446,7 +446,7 @@ def main():
                 progress.set_description("<Valid for stacking>")
                 input_ids = batch["input_ids"].to(DEVICE)
                 attention_mask=batch["attention_mask"].to(DEVICE)
-                ids = batch["ids"]
+                ids = batch["ids"].tolist()
                 preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask)
                 preds = preds.cpu().detach().tolist()
                 ids_ls.extend(ids)
@@ -472,7 +472,7 @@ def main():
             progress.set_description("<Test>")
             input_ids = batch["input_ids"].to(DEVICE)
             attention_mask=batch["attention_mask"].to(DEVICE)
-            ids = batch["ids"]
+            ids = batch["ids"].tolist()
             #labels = batch["labels"].to(DEVICE)
 
             outputs = []
@@ -482,7 +482,7 @@ def main():
                 outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
-            preds_ls.extend(outputs)
+            preds_ls.extend(outputs.cpu().tolist())
             ids_ls.extend(ids)
 
             outputs = torch.softmax(outputs, dim=1).cpu().detach().tolist()
