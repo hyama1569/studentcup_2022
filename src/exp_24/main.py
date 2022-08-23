@@ -32,8 +32,9 @@ from transformers import get_cosine_schedule_with_warmup
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 #TRAIN_FILE = os.path.join(DATA_PATH, "train.csv")
-TRAIN_FILE = os.path.join(DATA_PATH, "train_pseudo_cv_.csv")
-TEST_FILE = os.path.join(DATA_PATH, "test.csv")
+TRAIN_FILE = os.path.join(DATA_PATH, "train_pseudo_cv0733494315.csv")
+#TEST_FILE = os.path.join(DATA_PATH, "test.csv")
+TEST_FILE = os.path.join(DATA_PATH, "test_pseudo_cv0733494315.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
