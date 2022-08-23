@@ -1,7 +1,7 @@
 '''
 add scheduler
 change model parameter, lr
-microsoft/deberta-v3-large
+roberta-large
 cls
 MacroSoftF1Loss 削除
 layer re-initialization
@@ -38,11 +38,11 @@ TEST_FILE = os.path.join(DATA_PATH, "test_pseudo_cv0733494315.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_24"
+EXP_NUM = "exp_25"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'microsoft/deberta-v3-large'
+MODEL_NAME = 'roberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
-TRAIN_BATCH_SIZE = 4
+TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
 LEARNING_RATE = 2e-5
 DROPOUT_RATE = 0.1
