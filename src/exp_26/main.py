@@ -6,9 +6,9 @@ cls
 MacroSoftF1Loss 削除
 layer re-initialization
 pseudo labeling
-add stacking feature
+add stacking feature (一層前の予測値のみ)
 
-CV=0.787642345389872, leak?
+CV=
 LB=
 '''
 import collections
@@ -32,13 +32,13 @@ from transformers import get_cosine_schedule_with_warmup
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 #TRAIN_FILE = os.path.join(DATA_PATH, "train.csv")
-TRAIN_FILE = os.path.join(DATA_PATH, "train_pseudo_cv0733494315.csv")
+TRAIN_FILE = os.path.join(DATA_PATH, "train_pseudo_cv0744662490.csv")
 #TEST_FILE = os.path.join(DATA_PATH, "test.csv")
-TEST_FILE = os.path.join(DATA_PATH, "test_pseudo_cv0733494315.csv")
+TEST_FILE = os.path.join(DATA_PATH, "test_pseudo_cv0744662490.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_25"
+EXP_NUM = "exp_26"
 MODELS_DIR = "./models/"
 MODEL_NAME = 'roberta-large'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
@@ -53,8 +53,8 @@ D_HIDDEN_LINEAR = 128
 POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
 #POOLING_TYPE = 'concat'
-N_FEATS = 24
-EPOCHS = 15
+N_FEATS = 4
+EPOCHS = 10
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4

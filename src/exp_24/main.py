@@ -8,7 +8,7 @@ layer re-initialization
 pseudo labeling
 add stacking feature
 
-CV=
+CV=0.7857358025958703, leak?
 LB=
 '''
 import collections
@@ -177,7 +177,7 @@ class Classifier(nn.Module):
         
         self.addfeatures_emb = nn.Sequential(
             nn.Linear(num_addfeatures, 500),
-            nn.BatchNorm1d(500),
+            #nn.BatchNorm1d(500),
             nn.ReLU(),
             nn.Dropout(p=DROPOUT_RATE),
         )
