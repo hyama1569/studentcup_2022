@@ -24,9 +24,9 @@ pip install sentencepiece
 wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1w9ZwhbDMmqdCz8ixFO5PLcjZwst6KkSM' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1w9ZwhbDMmqdCz8ixFO5PLcjZwst6KkSM" -O submit_sample.csv && rm -rf /tmp/cookies.txt
 
 #train_pseudo_cv0744662490.csv
-wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1-14nx1Rt2aEyLCYTHrJXVfcyQN0G5I3d' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1-14nx1Rt2aEyLCYTHrJXVfcyQN0G5I3d" -O train_pseudo_cv0733494315.csv && rm -rf /tmp/cookies.txt
+wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1-14nx1Rt2aEyLCYTHrJXVfcyQN0G5I3d' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1-14nx1Rt2aEyLCYTHrJXVfcyQN0G5I3d" -O train_pseudo_cv0744662490.csv && rm -rf /tmp/cookies.txt
 #test_pseudo_cv0744662490.csv
-wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1-4oCFtJnCZxB5jUEi-S1NU4DNPXOqSk8' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1-4oCFtJnCZxB5jUEi-S1NU4DNPXOqSk8" -O test_pseudo_cv0733494315.csv && rm -rf /tmp/cookies.txt
+wget --load-cookies /tmp/cookies.txt "https://drive.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://drive.google.com/uc?export=download&id=1-4oCFtJnCZxB5jUEi-S1NU4DNPXOqSk8' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1-4oCFtJnCZxB5jUEi-S1NU4DNPXOqSk8" -O test_pseudo_cv0744662490.csv && rm -rf /tmp/cookies.txt
 
 #move files
 mv t* ../../data
