@@ -1,14 +1,14 @@
 '''
 add scheduler
 change model parameter, lr
-roberta-large
+roberta-base
 cls
 MacroSoftF1Loss 削除
 layer re-initialization
 pseudo labeling
-add stacking feature (一層前の予測値のみ)
+w/o stacking feature (一層前の予測値のみ)
 
-CV=0.7855409683410065
+CV=
 LB=
 '''
 import collections
@@ -38,9 +38,9 @@ TEST_FILE = os.path.join(DATA_PATH, "test_pseudo_cv0744662490.csv")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 SEED = 42
-EXP_NUM = "exp_26"
+EXP_NUM = "exp_27"
 MODELS_DIR = "./models/"
-MODEL_NAME = 'roberta-large'
+MODEL_NAME = 'roberta-base'
 MODEL_NAME_DIR= MODEL_NAME.replace('/', '-')
 TRAIN_BATCH_SIZE = 8
 VALID_BATCH_SIZE = 64
@@ -53,8 +53,7 @@ D_HIDDEN_LINEAR = 128
 POOLING_TYPE = 'cls'
 #POOLING_TYPE = 'max'
 #POOLING_TYPE = 'concat'
-N_FEATS = 4
-EPOCHS = 10
+EPOCHS = 15
 #FOLD_TYPE = 'kf'
 FOLD_TYPE = 'skf'
 NUM_SPLITS = 4
@@ -115,7 +114,6 @@ class MyDataset(Dataset):
         data: pd.DataFrame, 
         tokenizer,
         max_token_len: int,
-        addfeatures_ls: object,
         id_name: str = 'id',
         description_name: str = 'description',
         jobflag_name: str = 'jobflag',
@@ -123,7 +121,6 @@ class MyDataset(Dataset):
         self.data = data
         self.tokenizer = tokenizer
         self.max_token_len = max_token_len
-        self.addfeatures_ls =  addfeatures_ls
         self.id_name = id_name
         self.description_name = description_name
         self.jobflag_name = jobflag_name
@@ -133,7 +130,6 @@ class MyDataset(Dataset):
 
     def __getitem__(self, index):
         data_row = self.data.iloc[index]
-        addfeatures = data_row[self.addfeatures_ls]
         id = data_row[self.id_name]
         description = data_row[self.description_name]
         jobflag_name = data_row[self.jobflag_name]
@@ -153,7 +149,6 @@ class MyDataset(Dataset):
             attention_mask=encoding["attention_mask"].flatten(),
             labels=torch.tensor(jobflag_name),
             ids=torch.tensor(id),
-            addfeatures=torch.tensor(list(addfeatures.values)).flatten(),
         )
 
 class Classifier(nn.Module):
@@ -165,7 +160,6 @@ class Classifier(nn.Module):
         dropout_rate: float,
         #learning_rate: float,
         pooling_type: str,
-        num_addfeatures: int=N_FEATS,
         pretrained_model=MODEL_NAME,
     ):
         super().__init__()
@@ -174,15 +168,8 @@ class Classifier(nn.Module):
             classifier_hidden_size = self.bert.config.hidden_size * 4
         else:
             classifier_hidden_size = self.bert.config.hidden_size
-        
-        self.addfeatures_emb = nn.Sequential(
-            nn.Linear(num_addfeatures, 500),
-            #nn.BatchNorm1d(500),
-            nn.ReLU(),
-            nn.Dropout(p=DROPOUT_RATE),
-        )
 
-        self.classifier = nn.Linear(classifier_hidden_size + 500, n_classes)
+        self.classifier = nn.Linear(classifier_hidden_size, n_classes)
         nn.init.normal_(self.classifier.weight, std=0.02)
         nn.init.zeros_(self.classifier.bias)
         
@@ -193,18 +180,17 @@ class Classifier(nn.Module):
         self.pooling_type = pooling_type
 
 
-    def forward(self, input_ids, attention_mask, addfeatures):
+    def forward(self, input_ids, attention_mask):
         output = self.bert(input_ids, attention_mask=attention_mask)
-        addfeatures = self.addfeatures_emb(addfeatures.float())
         if self.pooling_type == 'cls':
             cls = output.hidden_states[-1][:,0]
-            preds = self.classifier(torch.cat([self.dropout(cls), addfeatures.float()], dim=1))
+            preds = self.classifier(self.dropout(cls))
         if self.pooling_type == 'max':
             mp = output.hidden_states[-1].max(1)[0]
-            preds = self.classifier(torch.cat([self.dropout(mp), addfeatures.float()], dim=1))
+            preds = self.classifier(self.dropout(mp))
         if self.pooling_type == 'concat':
             clses = torch.cat([output.hidden_states[-1*i][:,0] for i in range(1, 4+1)], dim=1)
-            preds = self.classifier(torch.cat([self.dropout(clses), addfeatures.float()], dim=1))
+            preds = self.classifier(self.dropout(clses))
         #preds = self.classifier(output.pooler_output)
         #preds = torch.flatten(preds)
         return preds, output
@@ -222,10 +208,10 @@ def train_fn(dataloader, model, optimizer, scheduler, epoch):
         input_ids = batch["input_ids"].to(DEVICE)
         attention_mask=batch["attention_mask"].to(DEVICE)
         labels = batch["labels"].to(DEVICE)
-        addfeatures = batch["addfeatures"].to(DEVICE)
 
         optimizer.zero_grad()
-        preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask, addfeatures=addfeatures)
+        preds, _ = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
         loss = model.criterion(preds, labels)
 
         loss.backward()
@@ -262,9 +248,9 @@ def eval_fn(dataloader, model, epoch):
             input_ids = batch["input_ids"].to(DEVICE)
             attention_mask=batch["attention_mask"].to(DEVICE)
             labels = batch["labels"].to(DEVICE)
-            addfeatures = batch["addfeatures"].to(DEVICE)
 
-            preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask, addfeatures=addfeatures)
+            preds, _ = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
             loss = model.criterion(preds, labels)
 
             preds = torch.argmax(preds, axis=1)
@@ -314,15 +300,14 @@ def trainer(fold, fold_indices, df):
     #valid_df = df[df.kfold == fold].reset_index(drop=True)
     train_df_fold = df.loc[fold_indices!=fold].reset_index(drop=True)
     valid_df_fold = df.loc[fold_indices==fold].reset_index(drop=True)
-    used_features_cols = [c for c in train_df_fold.columns if c not in ("id", "jobflag", "description")]
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
     #train_dataset = make_dataset(train_df, tokenizer, DEVICE)
     #valid_dataset = make_dataset(valid_df, tokenizer, DEVICE)
-    train_dataset = MyDataset(data=train_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN, addfeatures_ls=used_features_cols)
-    valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN, addfeatures_ls=used_features_cols)
-    
+    train_dataset = MyDataset(data=train_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+    valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
+
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
     )
@@ -442,13 +427,12 @@ def main():
     if FOLD_TYPE == 'skf':
         fold_indices = get_stratifiedkfold(train=train_df, target_col='jobflag', n_splits=NUM_SPLITS, seed=SEED)
     
-    used_features_cols = [c for c in train_df.columns if c not in ("id", "jobflag", "description")]
     valid_predict_df = pd.DataFrame()
     for fold in trn_fold:
         #train_df_fold = train_df.loc[fold_indices!=fold].reset_index(drop=True)
         valid_df_fold = train_df.loc[fold_indices==fold].reset_index(drop=True)
         #train_dataset = MyDataset(data=train_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
-        valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN, addfeatures_ls=used_features_cols)
+        valid_dataset = MyDataset(data=valid_df_fold, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
         #train_dataloader = torch.utils.data.DataLoader(
         #    train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
         #)
@@ -467,8 +451,7 @@ def main():
                 input_ids = batch["input_ids"].to(DEVICE)
                 attention_mask=batch["attention_mask"].to(DEVICE)
                 ids = batch["ids"].tolist()
-                addfeatures = batch["addfeatures"].to(DEVICE)
-                preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask, addfeatures=addfeatures)
+                preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask)
                 preds = preds.cpu().detach().tolist()
                 ids_ls.extend(ids)
                 preds_ls.extend(preds)
@@ -480,7 +463,7 @@ def main():
 
 
     ## test prediction for single model output & for stacking
-    test_dataset = MyDataset(data=test_df, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN, addfeatures_ls=used_features_cols)
+    test_dataset = MyDataset(data=test_df, tokenizer=tokenizer, max_token_len=MAX_TOKEN_LEN)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=VALID_BATCH_SIZE, shuffle=False)
 
     with torch.no_grad():
@@ -495,11 +478,11 @@ def main():
             attention_mask=batch["attention_mask"].to(DEVICE)
             ids = batch["ids"].tolist()
             #labels = batch["labels"].to(DEVICE)
-            addfeatures = batch["addfeatures"].to(DEVICE)
 
             outputs = []
             for model in models:
-                preds, _ = model.forward(input_ids=input_ids, attention_mask=attention_mask, addfeatures=addfeatures)
+                preds, _ = model.forward(input_ids=input_ids,
+                                     attention_mask=attention_mask)
                 outputs.append(preds)
 
             outputs = sum(outputs) / len(outputs)
